@@ -32,7 +32,7 @@ prototype shortcuts.
 - `public/index.html` — the whole UI (login card + app panel).
 - `public/app.js` — WebRTC, polling, capture gallery, cloud upload/list, zoom, full screen, picture-in-picture, wake lock, camera auto-resume.
 - `public/recording.js` — `saveFile`, `captureFrame` (snapshot), `createSessionRecorder` (start→stop video).
-- `public/style.css` — all styles (the original rules are minified onto line 1; new rules are appended below).
+- `public/style.css` — all styles. Colors are CSS variables on `:root` with a dark-mode override; icons are inline SVG `<symbol>`s at the top of `index.html` (`<use href="#i-name">`).
 - `render.yaml` — Render blueprint, lists every required env var.
 - `r2-cors.json` — CORS policy to paste into the R2 bucket.
 - `R2-SETUP.md` — first-time Cloudflare R2 setup.
@@ -61,6 +61,8 @@ prototype shortcuts.
 Never commit real values. `.env` is gitignored.
 
 ## Conventions
+
+- UI tone: plain, product-style copy ("Go live", "Record", "Library"). No marketing slogans, all-caps eyebrow labels or emoji/unicode glyph icons.
 
 - No frontend build tools or frameworks. Keep it plain JS that runs on iOS Safari.
 - `$` is `document.getElementById`. Keep DOM ids stable; app.js relies on them.

@@ -13,7 +13,7 @@ async function loadIce() {
 }
 
 function status(message) { $('status').textContent = message; }
-function live(on) { $('liveBadge').textContent = on ? '● LIVE' : 'OFF AIR'; $('liveBadge').classList.toggle('on', on); $('snapshot').disabled = !on; $('record').disabled = !on; $('zoomBox').hidden = !(on && role === 'broadcaster' && zoom.mode !== 'none'); }
+function live(on) { $('liveBadge').textContent = on ? 'Live' : 'Offline'; $('liveBadge').classList.toggle('on', on); $('viewerBox').classList.toggle('has-video', on); $('status').classList.toggle('is-live', on); $('snapshot').disabled = !on; $('record').disabled = !on; $('zoomBox').hidden = !(on && role === 'broadcaster' && zoom.mode !== 'none'); }
 async function api(path, options = {}) {
   const r = await fetch(path, { credentials: 'same-origin', ...options,
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
@@ -24,8 +24,9 @@ async function api(path, options = {}) {
 }
 async function send(type, payload = null) { return api('/signal', { method: 'POST', body: JSON.stringify({type, payload}) }); }
 function showApp() {
-  $('loginPanel').hidden = true; $('appPanel').hidden = false;
-  $('roleLabel').textContent = role === 'broadcaster' ? 'Broadcasting account' : 'Viewing account';
+  $('loginPanel').hidden = true; $('appPanel').hidden = false; $('sessionBar').hidden = false;
+  $('roleLabel').textContent = role === 'broadcaster' ? 'Streaming' : 'Watching';
+  $('viewerEmptyText').textContent = role === 'broadcaster' ? 'Camera is off. Tap Go live to start.' : 'Waiting for the stream. Tap Watch live.';
   $('start').hidden = role !== 'broadcaster'; $('connect').hidden = role !== 'viewer';
   $('stop').hidden = true;
   startPolling(); loadCloud(); loadIce();
@@ -37,7 +38,7 @@ $('loginForm').addEventListener('submit', async e => {
   } catch(err) { $('loginError').textContent = err.message; }
 });
 $('logout').onclick = async () => { await shutDown(); clearInterval(polling); await api('/logout', {method:'POST',body:'{}'}); location.reload(); };
-$('copyLink').onclick = async () => { try { await navigator.clipboard.writeText(location.origin); status('Link copied'); } catch { status(location.origin); } };
+$('copyLink').onclick = async () => { try { await navigator.clipboard.writeText(location.origin); status('Invite link copied'); } catch { status(location.origin); } };
 
 async function makePeer() {
   if (pc) pc.close(); pendingCandidates = [];
@@ -97,7 +98,7 @@ $('start').onclick = async () => {
     currentStream=outStream; video.srcObject=outStream; video.muted=true; await video.play();
     live(true); startRecorder(outStream); $('start').hidden=true; $('stop').hidden=false;
     requestWakeLock();
-    status('Camera ready. Your viewer can log in and tap Connect. Keep this page open.');
+    status('You are live. Viewers can sign in and tap Watch live.');
   } catch(err) { status('Camera error: '+err.message); }
 };
 video.addEventListener('click', () => { if (video.paused) video.play().catch(() => status('Tap Watch live again to resume playback.')); });
@@ -131,40 +132,64 @@ function stopRecorder() {
   chunks=[]; $('save').disabled=true;
 }
 function fileStamp() { return new Date().toISOString().replace(/[:.]/g,'-'); }
+const ICON = name => `<svg class="icon"><use href="#i-${name}"/></svg>`;
+function makeCard({ src, photo, title, sub, href, filename }) {
+  const card = document.createElement('article'); card.className = 'capture-card';
+  const preview = document.createElement('div'); preview.className = 'capture-preview';
+  const media = document.createElement(photo ? 'img' : 'video');
+  media.src = src;
+  if (photo) { media.alt = title; media.loading = 'lazy'; }
+  else { media.controls = true; media.playsInline = true; media.preload = 'metadata'; }
+  preview.appendChild(media);
+  const meta = document.createElement('div'); meta.className = 'capture-meta';
+  const text = document.createElement('div');
+  const t = document.createElement('strong'); t.textContent = title;
+  const st = document.createElement('small'); st.textContent = sub;
+  text.append(t, st);
+  const link = document.createElement('a'); link.href = href; link.setAttribute('aria-label', `Download ${title}`); link.title = 'Download';
+  if (filename) link.download = filename; else { link.target = '_blank'; link.rel = 'noopener'; }
+  link.innerHTML = ICON('download');
+  meta.append(text, link); card.append(preview, meta);
+  return card;
+}
 function addCapture(blob, kind, filename) {
-  const url = saveFile(blob, filename);
+  const url = URL.createObjectURL(blob);
   const grid = $('clips');
   if (grid.querySelector('.empty')) grid.innerHTML = '';
-  const card = document.createElement('article'); card.className='capture-card';
-  const preview = document.createElement('div'); preview.className='capture-preview';
-  if (kind === 'Photo') { const img = document.createElement('img'); img.src=url; img.alt='Saved tennis screenshot'; preview.appendChild(img); }
-  else { const vid = document.createElement('video'); vid.src=url; vid.controls=true; vid.playsInline=true; vid.preload='metadata'; preview.appendChild(vid); }
-  const meta = document.createElement('div'); meta.className='capture-meta';
-  const title=document.createElement('strong'); title.textContent=kind;
-  const time=document.createElement('small'); time.textContent=new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
-  const link=document.createElement('a'); link.href=url; link.download=filename; link.textContent='Save to device ↗';
-  meta.append(title,time,link); card.append(preview,meta); grid.prepend(card);
-  captureCount++; $('captureCount').textContent=`${captureCount} item${captureCount===1?'':'s'}`;
-  status(`${kind} saved locally. Uploading to your cloud library…`);
-  uploadToCloud(blob, kind).catch(err => status(`Local capture saved; cloud upload failed: ${err.message}`));
+  const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  grid.prepend(makeCard({ src: url, photo: kind === 'Photo', title: kind, sub: `${time} · ${formatSize(blob.size)}`, href: url, filename }));
+  captureCount++; $('captureCount').textContent = captureCount;
+  status(`${kind} captured. Uploading to the cloud…`);
+  uploadToCloud(blob, kind).catch(err => status(`${kind} kept on this device, but the cloud upload failed: ${err.message}`));
+}
+function formatSize(bytes) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
 }
 $('snapshot').onclick = async () => {
   try { const blob = await captureFrame(video); addCapture(blob,'Photo',`courtline-photo-${fileStamp()}.jpg`); }
   catch (err) { status(`Photo not saved: ${err.message}`); }
 };
+let recTicker = null;
 function updateRecordingUI() {
   const on = !!sessionRecorder && sessionRecorder.state === 'recording';
   $('record').classList.toggle('recording', on);
-  $('recordLabel').textContent = on ? 'Stop & save' : 'Record video';
-  $('recordHint').textContent = on ? 'Recording now' : 'Save a full clip';
-  $('record').querySelector('.capture-icon').textContent = on ? '■' : '●';
+  $('recordLabel').textContent = on ? 'Stop' : 'Record';
+  $('recordHint').textContent = on ? 'Stop and save the video' : 'Record a full video';
+  $('recBadge').hidden = !on;
+  clearInterval(recTicker);
+  if (on) {
+    const started = Date.now();
+    const tick = () => { const sec = Math.floor((Date.now() - started) / 1000); $('recTime').textContent = `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`; };
+    tick(); recTicker = setInterval(tick, 1000);
+  }
 }
 $('record').onclick = () => {
   if (sessionRecorder && sessionRecorder.state === 'recording') {
     sessionRecorder.stop(); sessionRecorder=null; updateRecordingUI(); return;
   }
   recordingPart = 1;
-  try { startSessionRecording(); status('Recording. Tap Stop & save to finish the video.'); }
+  try { startSessionRecording(); status('Recording. Tap Stop to save the video.'); }
   catch(err) { status(`Recording not started: ${err.message}`); }
 };
 let recordingPart = 1, resumeRecording = false;
@@ -198,28 +223,27 @@ async function uploadToCloud(blob, kind) {
     const detail = (await response.text().catch(()=>'')).match(/<Code>([^<]+)<\/Code>/)?.[1] || '';
     throw new Error(`R2 rejected the upload (HTTP ${response.status}${detail ? ' ' + detail : ''}). Check R2 keys have Read & Write on this bucket`);
   }
-  status(`${kind} saved to the cloud ✓`);
+  status(`${kind} saved to the cloud.`);
   await loadCloud();
 }
 async function loadCloud() {
+  const gallery = $('cloudClips');
+  $('refreshCloud').classList.add('spinning');
   try {
-    const {items} = await api('/api/recordings');
-    const gallery = $('cloudClips'); gallery.replaceChildren();
-    if(!items.length) { const empty=document.createElement('div');empty.className='empty';empty.textContent='No cloud recordings yet.';gallery.appendChild(empty);return; }
-    for(const item of items) {
-      const card=document.createElement('article');card.className='capture-card';
-      const preview=document.createElement('div');preview.className='capture-preview';
-      const photo=/\.(jpg|png)$/i.test(item.key);
-      const media=document.createElement(photo?'img':'video'); media.src=item.url;
-      if(photo) media.alt='Tennis screenshot'; else {media.controls=true;media.playsInline=true;media.preload='metadata';}
-      preview.appendChild(media);
-      const meta=document.createElement('div');meta.className='capture-meta';
-      const title=document.createElement('strong');title.textContent=photo?'Cloud photo':'Cloud video';
-      const stamp=document.createElement('small');stamp.textContent=new Date(item.date).toLocaleString();
-      const link=document.createElement('a');link.href=item.url;link.target='_blank';link.rel='noopener';link.textContent='Open / save ↗';
-      meta.append(title,stamp,link);card.append(preview,meta);gallery.appendChild(card);
+    const { items } = await api('/api/recordings');
+    gallery.replaceChildren();
+    if (!items.length) { gallery.innerHTML = '<div class="empty">Nothing saved to the cloud yet.</div>'; return; }
+    for (const item of items) {
+      const photo = /\.(jpg|png)$/i.test(item.key);
+      const when = new Date(item.date).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      gallery.appendChild(makeCard({ src: item.url, photo, title: photo ? 'Photo' : 'Video', sub: `${when} · ${formatSize(item.size)}`, href: item.url }));
     }
-  } catch(err) { $('cloudClips').textContent=`Cloud library unavailable: ${err.message}`; }
+  } catch (err) {
+    gallery.replaceChildren();
+    const box = document.createElement('div'); box.className = 'empty error';
+    box.textContent = `Couldn't load the cloud library. ${err.message}`;
+    gallery.appendChild(box);
+  } finally { $('refreshCloud').classList.remove('spinning'); }
 }
 $('refreshCloud').onclick = loadCloud;
 
@@ -311,7 +335,7 @@ function setFakeFull(on) {
 }
 function updateFullButton() {
   const on = !!fsElement() || $('viewerBox').classList.contains('is-full');
-  $('fullBtn').textContent = on ? '✕' : '⛶';
+  $('fullBtn').classList.toggle('is-on', on);
   $('fullBtn').setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
 }
 $('fullBtn').onclick = async () => {
@@ -420,3 +444,13 @@ function scheduleReconnect(delay) {
   }, delay);
 }
 window.addEventListener('online', () => { if (role === 'viewer' && wantWatch) scheduleReconnect(500); });
+
+
+// ---------- Library tabs ----------
+document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(t => {
+    const on = t === tab;
+    t.setAttribute('aria-selected', on);
+    $(t.dataset.tab).hidden = !on;
+  });
+}));

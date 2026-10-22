@@ -1,15 +1,127 @@
 <!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#0e251d"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>Courtline — Your private tennis studio</title><link rel="stylesheet" href="/style.css">
-</head><body><main class="shell">
-<header class="site-head"><div class="brand"><span class="brand-mark" aria-hidden="true">◒</span><span>Courtline</span></div><span class="private-pill"><span class="lock-dot"></span> PRIVATE STUDIO</span></header>
-<section id="loginPanel" class="login-card"><div class="eyebrow">THE MOMENTS WORTH KEEPING</div><h1>Every great rally,<br><em>remembered.</em></h1><p>Private live tennis with simple controls for the moments you want to revisit.</p><form id="loginForm"><label for="password">Access password</label><input id="password" type="password" autocomplete="current-password" placeholder="Enter your private password" required><button class="primary" type="submit">Enter the court <span aria-hidden="true">↗</span></button></form><p id="loginError" class="error" role="alert" aria-live="polite"></p><p class="footnote">Invite-only viewing. No public streams.</p></section>
-<section id="appPanel" hidden><div class="app-top"><div><div class="eyebrow">YOUR COURT</div><h1 class="app-title">Capture the moment.</h1><p class="app-subtitle" id="roleLabel"></p></div><button class="text-button" id="logout">Sign out ↗</button></div>
-<div class="viewer" id="viewerBox"><video id="video" autoplay playsinline muted autopictureinpicture></video><div id="liveBadge" class="live-badge">OFF AIR</div><div class="video-tools"><button id="pipBtn" class="tool-btn" type="button" aria-label="Picture in picture" title="Keep watching while you use other apps" hidden>⧉</button><button id="fullBtn" class="tool-btn" type="button" aria-label="Full screen" title="Full screen">⛶</button></div><div id="zoomBox" class="zoom-box" hidden><button id="zoomOut" type="button" aria-label="Zoom out">−</button><input id="zoomRange" type="range" min="1" max="4" step="0.1" value="1" aria-label="Zoom"><button id="zoomIn" type="button" aria-label="Zoom in">+</button><span id="zoomLabel">1.0×</span></div><div class="video-corner">COURTLINE / LIVE</div></div>
-<p id="status" class="status" role="status" aria-live="polite">Ready to go.</p>
-<div class="actions"><button class="primary" id="start" hidden>◉ &nbsp; Start streaming</button><button class="primary" id="connect" hidden>▶ &nbsp; Watch live</button><button class="soft" id="stop" hidden>■ &nbsp; End stream</button></div>
-<div class="capture-panel"><div class="section-head"><div><div class="eyebrow">IN THE MOMENT</div><h2>Keep a good play.</h2></div></div><div class="capture-actions"><button id="snapshot" class="capture-btn" disabled><span class="capture-icon">▣</span><strong>Snapshot</strong><small>Save a photo</small></button><button id="record" class="capture-btn" disabled><span class="capture-icon">●</span><strong id="recordLabel">Record video</strong><small id="recordHint">Save a full clip</small></button><button id="save" class="capture-btn" disabled><span class="capture-icon">↶</span><strong>Last 30s</strong><small>Experimental</small></button></div><p class="microcopy">Captures upload to your private cloud library. Phones pause the camera if you switch apps or lock the screen. If that happens, the video so far is saved and recording picks up again when you come back.</p></div>
-<div class="gallery-section"><div class="section-head"><div><div class="eyebrow">YOUR COLLECTION</div><h2>Recent captures</h2></div><span id="captureCount" class="count">0 items</span></div><div id="clips" class="gallery"><div class="empty">Your favorite tennis moments will appear here after you capture them.</div></div><p class="microcopy">Cloud recordings remain available after you close the page. Long videos currently upload after you stop recording.</p></div>
-<div class="gallery-section"><div class="section-head"><div><div class="eyebrow">YOUR LIBRARY</div><h2>Cloud replays</h2></div><button id="refreshCloud" class="soft">Refresh ↻</button></div><div id="cloudClips" class="gallery"><div class="empty">No cloud recordings yet.</div></div></div><div class="share-panel"><div><div class="eyebrow">WATCH TOGETHER</div><h2>Invite a viewer</h2><p>Share this private link, then provide your viewer password separately.</p></div><button id="copyLink" class="soft">Copy invite link ↗</button></div>
-</section><footer>COURTLINE <span>PRIVATE BY DESIGN</span></footer></main><script src="/recording.js" defer></script><script src="/app.js" defer></script></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f7f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0f0d" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="description" content="Private live streaming and recording for tennis matches.">
+<title>Courtline</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23c6f432'/%3E%3Cpath d='M6 7c6 4 6 14 0 18M26 7c-6 4-6 14 0 18' stroke='%231f4d38' stroke-width='2.4' fill='none'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-logo" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#c6f432"/><path d="M6 7c6 4 6 14 0 18M26 7c-6 4-6 14 0 18" stroke="#1f4d38" stroke-width="2.4" fill="none" stroke-linecap="round"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.6l1.4-2h7l1.4 2h1.6A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><circle cx="12" cy="13" r="3.6"/></symbol>
+    <symbol id="i-record" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4" class="fill"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2" class="fill"/></symbol>
+    <symbol id="i-rewind" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3.5 4v4.5H8"/><path d="M12 8v4l2.5 2"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" class="fill"/></symbol>
+    <symbol id="i-broadcast" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2" class="fill"/><path d="M8.2 15.8a5.4 5.4 0 0 1 0-7.6M15.8 8.2a5.4 5.4 0 0 1 0 7.6M5.3 18.7a9.5 9.5 0 0 1 0-13.4M18.7 5.3a9.5 9.5 0 0 1 0 13.4"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+    <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></symbol>
+    <symbol id="i-pip" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="12" y="11.5" width="6.5" height="5" rx="1" class="fill"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4.5v5h-5"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M6 12h12M12 6v12"/></symbol>
+  </defs>
+</svg>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="/" aria-label="Courtline home"><svg class="brand-logo"><use href="#i-logo"/></svg><span>Courtline</span></a>
+    <div class="topbar-right" id="sessionBar" hidden>
+      <span class="role-chip" id="roleLabel"></span>
+      <button class="btn btn-ghost btn-sm" id="logout" type="button">Sign out</button>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+  <section id="loginPanel" class="login">
+    <div class="login-card">
+      <svg class="login-logo"><use href="#i-logo"/></svg>
+      <h1>Sign in to Courtline</h1>
+      <p class="muted">Enter the password for your court to stream or watch.</p>
+      <form id="loginForm" class="login-form">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required>
+        <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+        <p id="loginError" class="form-error" role="alert" aria-live="polite"></p>
+      </form>
+    </div>
+    <p class="login-foot">Streams are private. Only people with a password can watch.</p>
+  </section>
+
+  <section id="appPanel" class="app" hidden>
+    <div class="stage-col">
+      <div class="viewer" id="viewerBox">
+        <video id="video" autoplay playsinline muted autopictureinpicture></video>
+        <div class="viewer-empty" id="viewerEmpty"><svg class="icon"><use href="#i-broadcast"/></svg><span id="viewerEmptyText">Not live</span></div>
+        <div class="overlay-top-left">
+          <span id="liveBadge" class="badge">Offline</span>
+          <span id="recBadge" class="badge badge-rec" hidden><i></i><span id="recTime">00:00</span></span>
+        </div>
+        <div class="video-tools">
+          <button id="pipBtn" class="tool-btn" type="button" aria-label="Picture in picture" title="Picture in picture" hidden><svg class="icon"><use href="#i-pip"/></svg></button>
+          <button id="fullBtn" class="tool-btn" type="button" aria-label="Full screen" title="Full screen"><svg class="icon icon-expand"><use href="#i-expand"/></svg><svg class="icon icon-collapse"><use href="#i-collapse"/></svg></button>
+        </div>
+        <div id="zoomBox" class="zoom-box" hidden>
+          <button id="zoomOut" type="button" aria-label="Zoom out"><svg class="icon"><use href="#i-minus"/></svg></button>
+          <input id="zoomRange" type="range" min="1" max="4" step="0.1" value="1" aria-label="Zoom">
+          <button id="zoomIn" type="button" aria-label="Zoom in"><svg class="icon"><use href="#i-plus"/></svg></button>
+          <span id="zoomLabel">1.0×</span>
+        </div>
+      </div>
+
+      <div class="controlbar">
+        <div class="primary-actions">
+          <button class="btn btn-primary" id="start" type="button" hidden><svg class="icon"><use href="#i-broadcast"/></svg>Go live</button>
+          <button class="btn btn-primary" id="connect" type="button" hidden><svg class="icon"><use href="#i-play"/></svg>Watch live</button>
+          <button class="btn btn-danger-soft" id="stop" type="button" hidden><svg class="icon"><use href="#i-stop"/></svg>End stream</button>
+        </div>
+        <div class="capture-actions" role="group" aria-label="Capture">
+          <button id="snapshot" class="cap-btn" type="button" disabled><svg class="icon"><use href="#i-camera"/></svg><span>Photo</span></button>
+          <button id="record" class="cap-btn cap-record" type="button" disabled><svg class="icon icon-rec"><use href="#i-record"/></svg><svg class="icon icon-stop"><use href="#i-stop"/></svg><span id="recordLabel">Record</span><span id="recordHint" class="sr-only">Record a full video</span></button>
+          <button id="save" class="cap-btn" type="button" disabled title="Save the last 30 seconds (beta)"><svg class="icon"><use href="#i-rewind"/></svg><span>Last 30s</span></button>
+        </div>
+      </div>
+
+      <p id="status" class="status" role="status" aria-live="polite">Ready</p>
+      <p class="note">If you switch apps or lock your phone, the camera pauses. Anything already recorded is saved, and recording continues when you come back.</p>
+    </div>
+
+    <aside class="side-col">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Library</h2>
+          <button id="refreshCloud" class="icon-btn" type="button" aria-label="Refresh cloud library" title="Refresh"><svg class="icon"><use href="#i-refresh"/></svg></button>
+        </div>
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" type="button" data-tab="cloudClips" aria-selected="true">Cloud</button>
+          <button class="tab" role="tab" type="button" data-tab="clips" aria-selected="false">This session <span id="captureCount" class="tab-count">0</span></button>
+        </div>
+        <div id="cloudClips" class="gallery" role="tabpanel"><div class="empty">Loading…</div></div>
+        <div id="clips" class="gallery" role="tabpanel" hidden><div class="empty">Photos and videos you take will show up here.</div></div>
+      </section>
+
+      <section class="panel invite">
+        <div>
+          <h2>Invite a viewer</h2>
+          <p class="muted">Send the link, and share the viewer password separately.</p>
+        </div>
+        <button id="copyLink" class="btn btn-secondary" type="button"><svg class="icon"><use href="#i-link"/></svg>Copy link</button>
+      </section>
+    </aside>
+  </section>
+</main>
+<script src="/recording.js" defer></script>
+<script src="/app.js" defer></script>
+</body>
+</html>
