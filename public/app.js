@@ -4,7 +4,13 @@ let role = null, pc = null, camera = null, currentStream = null, recorder = null
 let chunks = [], lastId = 0, epoch = null, recordingType = '', polling = null;
 let pendingCandidates = [], negotiating = false, clipNumber = 0, sessionRecorder = null, captureCount = 0;
 let outStream = null, wakeLock = null; // outStream = what viewers and recordings get (zoomed when zoom is on)
-const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }; // No TURN: some networks cannot connect.
+// ICE servers come from /api/ice (Cloudflare TURN relay when configured, STUN otherwise).
+let ICE = { iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:stun.l.google.com:19302' }] }, iceLoadedAt = 0;
+let wantWatch = false, reconnectTimer = null, reconnectTries = 0;
+async function loadIce() {
+  try { const r = await api('/api/ice'); if (r.iceServers && r.iceServers.length) { ICE = { iceServers: r.iceServers }; iceLoadedAt = Date.now(); } }
+  catch (err) { console.warn('ICE config unavailable', err); }
+}
 
 function status(message) { $('status').textContent = message; }
 function live(on) { $('liveBadge').textContent = on ? '● LIVE' : 'OFF AIR'; $('liveBadge').classList.toggle('on', on); $('snapshot').disabled = !on; $('record').disabled = !on; $('zoomBox').hidden = !(on && role === 'broadcaster' && zoom.mode !== 'none'); }
@@ -22,7 +28,7 @@ function showApp() {
   $('roleLabel').textContent = role === 'broadcaster' ? 'Broadcasting account' : 'Viewing account';
   $('start').hidden = role !== 'broadcaster'; $('connect').hidden = role !== 'viewer';
   $('stop').hidden = true;
-  startPolling(); loadCloud();
+  startPolling(); loadCloud(); loadIce();
 }
 $('loginForm').addEventListener('submit', async e => {
   e.preventDefault();
@@ -35,10 +41,16 @@ $('copyLink').onclick = async () => { try { await navigator.clipboard.writeText(
 
 async function makePeer() {
   if (pc) pc.close(); pendingCandidates = [];
-  pc = new RTCPeerConnection(ICE);
+  if (Date.now() - iceLoadedAt > 6 * 3600 * 1000) await loadIce();
+  const peer = pc = new RTCPeerConnection(ICE);
   pc.onicecandidate = e => { if(e.candidate) send('candidate', e.candidate.toJSON()).catch(console.error); };
-  pc.onconnectionstatechange = () => { if (pc && pc.connectionState === 'connected') status('Live video connected');
-    if (pc && ['failed','disconnected'].includes(pc.connectionState)) status('Connection lost. Try reconnecting; some networks require a TURN relay.'); };
+  pc.onconnectionstatechange = () => {
+    if (peer !== pc) return; // an older connection we already replaced
+    const state = pc.connectionState;
+    if (state === 'connected') { status('Live video connected'); reconnectTries = 0; clearTimeout(reconnectTimer); }
+    if (state === 'disconnected') { status('Connection unstable… reconnecting'); scheduleReconnect(4000); }
+    if (state === 'failed') { status('Connection dropped… reconnecting'); scheduleReconnect(0); }
+  };
   pc.ontrack = e => { if(role === 'viewer') {
     currentStream = e.streams[0] || new MediaStream([e.track]);
     video.srcObject = currentStream; video.muted = false;
@@ -47,7 +59,7 @@ async function makePeer() {
   }};
   if(role === 'broadcaster' && outStream) outStream.getTracks().forEach(track => pc.addTrack(track,outStream));
 }
-async function flushCandidates() { while(pendingCandidates.length) await pc.addIceCandidate(pendingCandidates.shift()); }
+async function flushCandidates() { while(pendingCandidates.length) await pc.addIceCandidate(pendingCandidates.shift()).catch(() => {}); }
 async function offer() {
   if(!camera || negotiating) return;
   negotiating = true;
@@ -65,13 +77,13 @@ async function handle(e) {
   }
   if(e.type === 'candidate') {
     if(!pc || !pc.remoteDescription) pendingCandidates.push(e.payload);
-    else await pc.addIceCandidate(e.payload);
+    else await pc.addIceCandidate(e.payload).catch(() => {});
   }
-  if(e.type === 'leave') { if(pc) pc.close(); pc=null; if(role === 'viewer'){stopRecorder(); live(false); status('Broadcaster ended the stream');} }
+  if(e.type === 'leave') { if(pc) pc.close(); pc=null; if(role === 'viewer'){stopRecorder(); live(false); status(wantWatch ? 'Stream ended. Waiting for the broadcaster to go live again…' : 'Broadcaster ended the stream'); if (wantWatch) scheduleReconnect(5000);} }
 }
 async function poll() {
   try { const result = await api(`/events?after=${lastId}`);
-    if(epoch && result.epoch !== epoch) { lastId=0; if(pc) pc.close(); pc=null; }
+    if(epoch && result.epoch !== epoch) { lastId=0; } // server restarted; the video itself is peer-to-peer, so keep it
     epoch=result.epoch;
     for(const event of result.events) { lastId = Math.max(lastId,event.id); try { await handle(event); } catch(err) { console.error(err);status('Video negotiation error: '+err.message); } }
     lastId = Math.max(lastId, result.last_id);
@@ -89,9 +101,10 @@ $('start').onclick = async () => {
   } catch(err) { status('Camera error: '+err.message); }
 };
 video.addEventListener('click', () => { if (video.paused) video.play().catch(() => status('Tap Watch live again to resume playback.')); });
-$('connect').onclick = async () => { try { status('Requesting live video…'); requestWakeLock(); await send('join'); } catch(err) { status(err.message); } };
+$('connect').onclick = async () => { wantWatch = true; reconnectTries = 0; try { status('Requesting live video…'); requestWakeLock(); await send('join'); scheduleReconnect(8000); } catch(err) { status(err.message); } };
 $('stop').onclick = async () => { await shutDown(); $('start').hidden=false; $('stop').hidden=true; status('Stream stopped'); };
 async function shutDown() {
+  wantWatch = false; clearTimeout(reconnectTimer); resumeRecording = false;
   if(role) try { await send('leave'); } catch {}
   if(pc) pc.close();pc=null;
   if(camera) camera.getTracks().forEach(t=>t.stop()); camera=null;
@@ -150,16 +163,21 @@ $('record').onclick = () => {
   if (sessionRecorder && sessionRecorder.state === 'recording') {
     sessionRecorder.stop(); sessionRecorder=null; updateRecordingUI(); return;
   }
-  try {
-    if (!currentStream || !currentStream.active) throw new Error('Start the stream first.');
-    // A standalone start-to-stop file is more reliable on Safari than joining arbitrary time slices.
-    sessionRecorder = createSessionRecorder(currentStream, blob => {
-      const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
-      addCapture(blob,'Video',`courtline-video-${fileStamp()}.${ext}`);
-    }, status);
-    updateRecordingUI(); status('Recording. Tap Stop & save to finish the video.');
-  } catch(err) { status(`Recording not started: ${err.message}`); }
+  recordingPart = 1;
+  try { startSessionRecording(); status('Recording. Tap Stop & save to finish the video.'); }
+  catch(err) { status(`Recording not started: ${err.message}`); }
 };
+let recordingPart = 1, resumeRecording = false;
+function startSessionRecording() {
+  if (!currentStream || !currentStream.active) throw new Error('Start the stream first.');
+  const part = recordingPart;
+  // A standalone start-to-stop file is more reliable on Safari than joining arbitrary time slices.
+  sessionRecorder = createSessionRecorder(currentStream, blob => {
+    const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
+    addCapture(blob, part > 1 ? `Video (part ${part})` : 'Video', `courtline-video-${fileStamp()}.${ext}`);
+  }, status);
+  updateRecordingUI();
+}
 $('save').onclick = () => {
   if(!chunks.length) return;
   const mime = recorder?.mimeType || recordingType || 'video/webm';
@@ -350,8 +368,20 @@ async function restartCamera() {
   startRecorder(outStream);
   status('Camera resumed. You are live again.');
 }
+// Phones pause the camera when the browser is minimized or the screen locks, and a
+// website cannot prevent that. So: save + upload what was recorded so far the moment
+// the page is hidden, then start a new part automatically when the user comes back.
+function pipActive() { return !!document.pictureInPictureElement || video.webkitPresentationMode === 'picture-in-picture'; }
+function saveRecordingBeforeHide() {
+  if (!sessionRecorder || sessionRecorder.state !== 'recording') return;
+  if (role === 'viewer' && pipActive()) return; // video keeps playing in the floating window
+  resumeRecording = true;
+  sessionRecorder.stop(); sessionRecorder = null; updateRecordingUI();
+}
+window.addEventListener('pagehide', saveRecordingBeforeHide);
+window.addEventListener('beforeunload', e => { if (sessionRecorder && sessionRecorder.state === 'recording') { e.preventDefault(); e.returnValue = ''; } });
 document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState !== 'visible') return;
+  if (document.visibilityState !== 'visible') { saveRecordingBeforeHide(); return; }
   if (camera || role === 'viewer') requestWakeLock();
   if (role === 'broadcaster' && camera) {
     const dead = () => { const t = camera && camera.getVideoTracks()[0]; return !t || t.readyState === 'ended' || t.muted; };
@@ -362,4 +392,31 @@ document.addEventListener('visibilitychange', async () => {
     }
   }
   if (video.srcObject && video.paused) video.play().catch(() => {});
+  if (resumeRecording) {
+    resumeRecording = false;
+    try {
+      // Give the camera/stream a moment to come back before recording again.
+      await new Promise(r => setTimeout(r, 800));
+      recordingPart++; startSessionRecording();
+      status(`Welcome back. Your earlier video was saved; recording part ${recordingPart} now.`);
+    } catch (err) { status(`Earlier video saved. Recording did not restart: ${err.message}`); }
+  }
 });
+
+
+// ---------- Automatic reconnect ----------
+// The viewer taps Watch live once; after that we keep asking for video until it is
+// connected, and again whenever it drops (network change, broadcaster restarts, etc.).
+function scheduleReconnect(delay) {
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(async () => {
+    if (pc && pc.connectionState === 'connected') return;
+    if (role === 'viewer' && wantWatch) {
+      reconnectTries++;
+      if (reconnectTries > 1) status(`Reconnecting to live video… (attempt ${reconnectTries})`);
+      try { await send('join'); } catch {}
+      scheduleReconnect(Math.min(20000, 6000 + reconnectTries * 2000)); // check again; back off slowly
+    }
+  }, delay);
+}
+window.addEventListener('online', () => { if (role === 'viewer' && wantWatch) scheduleReconnect(500); });

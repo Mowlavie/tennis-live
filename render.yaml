@@ -22,3 +22,7 @@ services:
         sync: false
       - key: R2_SECRET_ACCESS_KEY
         sync: false
+      - key: CF_TURN_KEY_ID
+        sync: false
+      - key: CF_TURN_KEY_API_TOKEN
+        sync: false

@@ -3,6 +3,7 @@ require 'json'
 require 'securerandom'
 require 'thread'
 require 'aws-sdk-s3'
+require 'net/http'
 
 class TennisLive < Sinatra::Base
   configure do
@@ -121,6 +122,39 @@ class TennisLive < Sinatra::Base
       STATE[:events] = STATE[:events].last(MAX_EVENTS)
     end
     { ok: true }.to_json
+  end
+
+  # ICE servers for WebRTC. With Cloudflare TURN configured, phones that cannot connect
+  # directly (cellular, strict Wi-Fi) relay through Cloudflare instead of dropping.
+  STUN_ONLY = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }].freeze
+  ICE_CACHE = { servers: nil, expires: Time.at(0) }
+
+  def self.ice_servers
+    key_id, token = ENV['CF_TURN_KEY_ID'].to_s.strip, ENV['CF_TURN_KEY_API_TOKEN'].to_s.strip
+    return STUN_ONLY if key_id.empty? || token.empty?
+    LOCK.synchronize { return ICE_CACHE[:servers] if ICE_CACHE[:servers] && Time.now < ICE_CACHE[:expires] }
+    uri = URI("https://rtc.live.cloudflare.com/v1/turn/keys/#{key_id}/credentials/generate-ice-servers")
+    res = Net::HTTP.start(uri.host, uri.port, use_ssl: true, open_timeout: 5, read_timeout: 5) do |http|
+      req = Net::HTTP::Post.new(uri, 'Authorization' => "Bearer #{token}", 'Content-Type' => 'application/json')
+      req.body = { ttl: 86_400 }.to_json
+      http.request(req)
+    end
+    raise "Cloudflare TURN HTTP #{res.code}" unless res.is_a?(Net::HTTPSuccess)
+    servers = Array(JSON.parse(res.body)['iceServers']).map do |s|
+      # Browsers block port 53, so drop those URLs.
+      s.merge('urls' => Array(s['urls']).reject { |u| u =~ /:53(\?|$)/ })
+    end.reject { |s| s['urls'].empty? }
+    LOCK.synchronize { ICE_CACHE[:servers] = servers; ICE_CACHE[:expires] = Time.now + 12 * 3600 }
+    servers
+  rescue StandardError => e
+    warn "TURN credentials unavailable, using STUN only: #{e.message}"
+    STUN_ONLY
+  end
+
+  get '/api/ice' do
+    authenticated!
+    content_type :json
+    { iceServers: self.class.ice_servers, relay: !ENV['CF_TURN_KEY_ID'].to_s.strip.empty? }.to_json
   end
 
   # R2 presigned uploads let the phone send videos directly to storage.
