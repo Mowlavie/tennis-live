@@ -20,7 +20,7 @@ function showApp() {
   $('roleLabel').textContent = role === 'broadcaster' ? 'Broadcasting account' : 'Viewing account';
   $('start').hidden = role !== 'broadcaster'; $('connect').hidden = role !== 'viewer';
   $('stop').hidden = true;
-  startPolling();
+  startPolling(); loadCloud();
 }
 $('loginForm').addEventListener('submit', async e => {
   e.preventDefault();
@@ -127,7 +127,8 @@ function addCapture(blob, kind, filename) {
   const link=document.createElement('a'); link.href=url; link.download=filename; link.textContent='Save to device ↗';
   meta.append(title,time,link); card.append(preview,meta); grid.prepend(card);
   captureCount++; $('captureCount').textContent=`${captureCount} item${captureCount===1?'':'s'}`;
-  status(`${kind} ready. On iPhone, choose Save to Files or Save Video/Photo from the share/download options.`);
+  status(`${kind} saved locally. Uploading to your cloud library…`);
+  uploadToCloud(blob, kind).catch(err => status(`Local capture saved; cloud upload failed: ${err.message}`));
 }
 $('snapshot').onclick = async () => {
   try { const blob = await captureFrame(video); addCapture(blob,'Photo',`courtline-photo-${fileStamp()}.jpg`); }
@@ -164,3 +165,33 @@ $('save').onclick = () => {
   status('Highlight exported. If it will not play on iPhone, use Record video for a complete, compatible clip.');
 };
 (async function init(){ try {const me=await api('/me'); if(me.role){role=me.role;showApp();}} catch(err){console.error(err);} })();
+
+async function uploadToCloud(blob, kind) {
+  const mime = blob.type.split(';')[0] || (kind === 'Photo' ? 'image/jpeg' : 'video/mp4');
+  const ticket = await api('/api/uploads', {method:'POST', body:JSON.stringify({type:mime,size:blob.size})});
+  const response = await fetch(ticket.url, {method:'PUT',headers:{'Content-Type':ticket.content_type},body:blob});
+  if(!response.ok) throw new Error(`R2 upload HTTP ${response.status}; verify bucket CORS`);
+  status(`${kind} saved to the cloud ✓`);
+  await loadCloud();
+}
+async function loadCloud() {
+  try {
+    const {items} = await api('/api/recordings');
+    const gallery = $('cloudClips'); gallery.replaceChildren();
+    if(!items.length) { const empty=document.createElement('div');empty.className='empty';empty.textContent='No cloud recordings yet.';gallery.appendChild(empty);return; }
+    for(const item of items) {
+      const card=document.createElement('article');card.className='capture-card';
+      const preview=document.createElement('div');preview.className='capture-preview';
+      const photo=/\.(jpg|png)$/i.test(item.key);
+      const media=document.createElement(photo?'img':'video'); media.src=item.url;
+      if(photo) media.alt='Tennis screenshot'; else {media.controls=true;media.playsInline=true;media.preload='metadata';}
+      preview.appendChild(media);
+      const meta=document.createElement('div');meta.className='capture-meta';
+      const title=document.createElement('strong');title.textContent=photo?'Cloud photo':'Cloud video';
+      const stamp=document.createElement('small');stamp.textContent=new Date(item.date).toLocaleString();
+      const link=document.createElement('a');link.href=item.url;link.target='_blank';link.rel='noopener';link.textContent='Open / save ↗';
+      meta.append(title,stamp,link);card.append(preview,meta);gallery.appendChild(card);
+    }
+  } catch(err) { $('cloudClips').textContent=`Cloud library unavailable: ${err.message}`; }
+}
+$('refreshCloud').onclick = loadCloud;

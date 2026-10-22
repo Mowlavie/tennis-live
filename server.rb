@@ -2,6 +2,7 @@ require 'sinatra/base'
 require 'json'
 require 'securerandom'
 require 'thread'
+require 'aws-sdk-s3'
 
 class TennisLive < Sinatra::Base
   configure do
@@ -15,6 +16,17 @@ class TennisLive < Sinatra::Base
   STATE = { events: [], next_id: 1, epoch: SecureRandom.hex(8) }
   LOCK = Mutex.new
   MAX_EVENTS = 250
+  def self.r2
+    @r2 ||= Aws::S3::Client.new(
+      access_key_id: ENV.fetch('R2_ACCESS_KEY_ID'),
+      secret_access_key: ENV.fetch('R2_SECRET_ACCESS_KEY'),
+      endpoint: ENV.fetch('R2_ENDPOINT'),
+      region: 'auto', force_path_style: true
+    )
+  end
+  def self.signer
+    @signer ||= Aws::S3::Presigner.new(client: r2)
+  end
 
   before do
     cache_control :no_store
@@ -100,6 +112,33 @@ class TennisLive < Sinatra::Base
       STATE[:events] = STATE[:events].last(MAX_EVENTS)
     end
     { ok: true }.to_json
+  end
+
+  # R2 presigned uploads let the phone send videos directly to storage.
+  post '/api/uploads' do
+    authenticated!
+    content_type :json
+    halt 503, {error: 'Cloud recording not configured'}.to_json unless ENV['R2_BUCKET'] && ENV['R2_ENDPOINT']
+    data = json_body
+    mime = data['type'].to_s.split(';').first
+    ext = {'video/mp4'=>'mp4','video/webm'=>'webm','image/jpeg'=>'jpg','image/png'=>'png'}[mime]
+    halt 400, {error: 'Unsupported file format'}.to_json unless ext
+    size = data['size'].to_i
+    halt 400, {error: 'File must be 1 byte to 150 MB'}.to_json unless size.between?(1,150*1024*1024)
+    key = "recordings/#{Time.now.utc.strftime('%Y/%m/%d')}/#{SecureRandom.uuid}.#{ext}"
+    url = self.class.signer.presigned_url(:put_object, bucket: ENV.fetch('R2_BUCKET'), key: key, content_type: mime, expires_in: 600)
+    {url: url, key: key, content_type: mime}.to_json
+  end
+
+  get '/api/recordings' do
+    authenticated!
+    content_type :json
+    halt 503, {error: 'Cloud recording not configured'}.to_json unless ENV['R2_BUCKET'] && ENV['R2_ENDPOINT']
+    result = self.class.r2.list_objects_v2(bucket: ENV.fetch('R2_BUCKET'), prefix: 'recordings/', max_keys: 100)
+    {items: result.contents.sort_by(&:last_modified).reverse.map do |obj|
+      { key: obj.key, size: obj.size, date: obj.last_modified.utc.iso8601,
+        url: self.class.signer.presigned_url(:get_object, bucket: ENV.fetch('R2_BUCKET'), key: obj.key, expires_in: 900) }
+    end}.to_json
   end
 
   run! if app_file == $PROGRAM_NAME
