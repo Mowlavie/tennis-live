@@ -66,6 +66,17 @@ Work through these in order:
 3. Render → tennis-live → Environment → add `CF_TURN_KEY_ID` and `CF_TURN_KEY_API_TOKEN` → Save, rebuild, and deploy.
 4. Verify with `/api/ice` (`"relay":true`). If the keys are wrong, Render logs show `TURN credentials unavailable` and the app quietly falls back to STUN.
 
+## 4b. Set up Google sign-in
+
+1. https://console.cloud.google.com → create a project ("Courtline").
+2. **APIs & Services → OAuth consent screen** (Google Auth Platform → Branding/Audience): External, app name "Courtline", support email, and links to `/privacy.html` and `/terms.html`. Scopes: `openid`, `email`, `profile` (no verification needed for these). Click **Publish app**. In "Testing" mode only listed test users can sign in.
+3. **Credentials → Create credentials → OAuth client ID → Web application.**
+   Authorized redirect URIs:
+   - `https://tennis-live-s93z.onrender.com/auth/google/callback`
+   - `http://localhost:9292/auth/google/callback` (local testing)
+4. Render → Environment: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BROADCASTER_EMAILS` (e.g. `you@gmail.com`), `VIEWER_EMAILS` (e.g. `grandma@gmail.com, coach@club.com`) → Save, rebuild, and deploy.
+5. To add or remove a person, edit the email lists and redeploy (in-app invites come with the database).
+
 ## 5. Add a new video control (pattern)
 
 1. Markup: add a `<button class="tool-btn">` inside `.video-tools` in `public/index.html` (top-right of the video), or a new overlay inside `#viewerBox`.

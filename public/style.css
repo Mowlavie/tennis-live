@@ -182,3 +182,86 @@ body.no-scroll { overflow: hidden; }
   .role-chip { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* Google + consent */
+.btn-google { background: #fff; color: #1f1f1f; border-color: #dadce0; text-decoration: none; margin-bottom: 4px; }
+.btn-google:hover { background: #f8f9fa; }
+.divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; margin: 16px 0 12px; }
+.divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.legal-line { font-size: 12px; color: var(--muted); margin: 14px 0 0 !important; }
+.legal-line a, .check a { color: inherit; text-decoration: underline; }
+.consent-card { display: grid; gap: 14px; }
+.consent-card p { margin: 0 !important; }
+.choice-group { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+.choice-group legend { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.choice { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; font-size: 14px; }
+.choice:has(input:checked) { border-color: var(--focus); background: color-mix(in srgb, var(--focus) 8%, transparent); }
+.check { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 1.45; }
+.check input, .choice input { accent-color: var(--brand); width: 17px; height: 17px; flex: none; margin: 1px 0 0; }
+.consent-signout { justify-self: center; }
+.small { font-size: 12px; }
+
+/* Dialog */
+.dialog { border: 1px solid var(--line); border-radius: 16px; padding: 22px; max-width: 420px; width: calc(100% - 32px); background: var(--surface); color: var(--ink); box-shadow: 0 20px 60px rgb(0 0 0 / .25); }
+.dialog::backdrop { background: rgb(0 0 0 / .45); }
+.dialog form { display: grid; gap: 14px; }
+.dialog h2 { font-size: 18px; }
+.dialog p { margin: 0; font-size: 14px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Chat panel */
+.chat-panel { display: flex; flex-direction: column; }
+.chat-list { height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 2px 2px 8px; overscroll-behavior: contain; }
+.chat-empty { margin: auto; color: var(--muted); font-size: 13px; }
+.chat-msg { font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.chat-msg b { font-weight: 650; margin-right: 6px; }
+.chat-msg b.host { color: var(--brand); }
+.chat-msg b.host::after { content: "Streamer"; font-size: 10px; font-weight: 600; margin-left: 6px; padding: 1px 5px; border-radius: 4px; background: var(--surface-2); color: var(--muted); vertical-align: 1px; }
+.chat-msg time { font-size: 11px; color: var(--muted); margin-left: 6px; }
+.chat-msg.mine { opacity: .95; }
+.chat-form { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.chat-form input { height: 40px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--bg); padding: 0 12px; font-size: 16px; min-width: 0; }
+.chat-form input:focus { outline: none; border-color: var(--focus); }
+.chat-input-row { display: flex; gap: 6px; }
+.chat-input-row input { flex: 1; }
+.icon-btn-primary { width: 40px; height: 40px; background: var(--brand); color: var(--brand-ink); border-color: transparent; }
+.icon-btn-primary:hover { color: var(--brand-ink); filter: brightness(1.08); }
+.chat-form .form-error { min-height: 0; margin: 0; }
+
+/* Chat on the video */
+.tool-btn { position: relative; }
+.tool-btn .dot { position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--ball); box-shadow: 0 0 0 2px rgb(0 0 0 / .5); }
+.chat-overlay { position: absolute; left: 12px; bottom: 64px; width: min(360px, calc(100% - 24px)); display: flex; flex-direction: column; gap: 6px; pointer-events: none; z-index: 2; }
+.chat-overlay .bubble { align-self: flex-start; max-width: 100%; padding: 6px 10px; border-radius: 10px; background: rgb(0 0 0 / .55); color: #fff; font-size: 14px; line-height: 1.35; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: bubble-in .2s ease-out; overflow-wrap: anywhere; }
+.chat-overlay .bubble b { margin-right: 6px; color: var(--ball); }
+.chat-overlay .bubble.fade { opacity: 0; transition: opacity .6s; }
+@keyframes bubble-in { from { opacity: 0; transform: translateY(6px); } }
+.overlay-chat-form { display: none; position: absolute; left: 12px; right: 12px; bottom: 12px; gap: 6px; z-index: 3; }
+.viewer.chat-open .overlay-chat-form { display: flex; }
+.viewer.chat-open .zoom-box { bottom: 64px; }
+.viewer.chat-open .chat-overlay { bottom: 116px; }
+.overlay-chat-form input { flex: 1; min-width: 0; height: 42px; border-radius: 10px; border: 1px solid rgb(255 255 255 / .25); background: rgb(0 0 0 / .6); color: #fff; padding: 0 12px; font-size: 16px; }
+.overlay-chat-form button { width: 42px; height: 42px; border: 0; border-radius: 10px; background: var(--ball); color: #10180f; display: flex; align-items: center; justify-content: center; padding: 0; }
+.viewer:not(.is-full):not(:fullscreen) .chat-overlay { display: none; }
+
+/* Cloud card delete */
+.card-actions { display: flex; gap: 2px; }
+.capture-meta button { width: 30px; height: 30px; border: 0; background: transparent; border-radius: 7px; color: var(--muted); display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.capture-meta button:hover { background: var(--danger-soft); color: var(--danger); }
+.capture-meta button .icon { width: 16px; height: 16px; }
+
+/* Footer */
+.site-foot { max-width: 1200px; margin: 0 auto; padding: 8px 20px 32px; display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.site-foot a { color: inherit; text-decoration: none; }
+.site-foot a:hover { color: var(--ink); text-decoration: underline; }
+@media (max-width: 640px) { .site-foot { padding: 8px 16px 28px; } .chat-list { height: 220px; } }
+
+/* Legal pages */
+.legal { max-width: 720px; margin: 0 auto; padding: 32px 20px 64px; }
+.legal h1 { font-size: 28px; font-weight: 650; margin-bottom: 4px; }
+.legal h2 { font-size: 18px; font-weight: 650; margin: 28px 0 8px; }
+.legal p, .legal li { color: var(--ink); font-size: 15px; line-height: 1.65; }
+.legal ul { padding-left: 20px; }
+.legal .updated { color: var(--muted); font-size: 13px; margin-top: 0; }
+.legal .callout { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 14px; }
+.legal a { color: var(--brand); }

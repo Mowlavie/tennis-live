@@ -7,6 +7,7 @@ let outStream = null, wakeLock = null; // outStream = what viewers and recording
 // ICE servers come from /api/ice (Cloudflare TURN relay when configured, STUN otherwise).
 let ICE = { iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:stun.l.google.com:19302' }] }, iceLoadedAt = 0;
 let wantWatch = false, reconnectTimer = null, reconnectTries = 0;
+let me = {}, filmingOk = false, chatLast = 0, appStarted = false;
 async function loadIce() {
   try { const r = await api('/api/ice'); if (r.iceServers && r.iceServers.length) { ICE = { iceServers: r.iceServers }; iceLoadedAt = Date.now(); } }
   catch (err) { console.warn('ICE config unavailable', err); }
@@ -19,22 +20,25 @@ async function api(path, options = {}) {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
   let data;
   try { data = await r.json(); } catch { throw new Error(`Server error (HTTP ${r.status})`); }
-  if (!r.ok) throw new Error(data.error || `Request failed (HTTP ${r.status})`);
+  if (!r.ok) { if (data.code === 'consent_required' && typeof showConsent === 'function') showConsent(); throw new Error(data.error || `Request failed (HTTP ${r.status})`); }
   return data;
 }
 async function send(type, payload = null) { return api('/signal', { method: 'POST', body: JSON.stringify({type, payload}) }); }
 function showApp() {
+  if (appStarted) return; appStarted = true;
+  $('consentPanel').hidden = true;
   $('loginPanel').hidden = true; $('appPanel').hidden = false; $('sessionBar').hidden = false;
   $('roleLabel').textContent = role === 'broadcaster' ? 'Streaming' : 'Watching';
   $('viewerEmptyText').textContent = role === 'broadcaster' ? 'Camera is off. Tap Go live to start.' : 'Waiting for the stream. Tap Watch live.';
   $('start').hidden = role !== 'broadcaster'; $('connect').hidden = role !== 'viewer';
   $('stop').hidden = true;
+  setupChatIdentity();
   startPolling(); loadCloud(); loadIce();
 }
 $('loginForm').addEventListener('submit', async e => {
   e.preventDefault();
-  try { const data = await api('/login', { method:'POST', body: JSON.stringify({password: $('password').value}) });
-    $('password').value = ''; role = data.role; showApp();
+  try { await api('/login', { method:'POST', body: JSON.stringify({password: $('password').value}) });
+    $('password').value = ''; await afterSignIn();
   } catch(err) { $('loginError').textContent = err.message; }
 });
 $('logout').onclick = async () => { await shutDown(); clearInterval(polling); await api('/logout', {method:'POST',body:'{}'}); location.reload(); };
@@ -83,15 +87,18 @@ async function handle(e) {
   if(e.type === 'leave') { if(pc) pc.close(); pc=null; if(role === 'viewer'){stopRecorder(); live(false); status(wantWatch ? 'Stream ended. Waiting for the broadcaster to go live again…' : 'Broadcaster ended the stream'); if (wantWatch) scheduleReconnect(5000);} }
 }
 async function poll() {
-  try { const result = await api(`/events?after=${lastId}`);
-    if(epoch && result.epoch !== epoch) { lastId=0; } // server restarted; the video itself is peer-to-peer, so keep it
+  try { const result = await api(`/events?after=${lastId}&chat_after=${chatLast}`);
+    // Server restarted: reset counters and refetch next tick. The video is peer-to-peer, so keep it.
+    if(epoch && result.epoch !== epoch) { epoch=result.epoch; lastId=0; chatLast=0; $('chatList').replaceChildren(); return; }
     epoch=result.epoch;
+    renderChat(result.chat);
     for(const event of result.events) { lastId = Math.max(lastId,event.id); try { await handle(event); } catch(err) { console.error(err);status('Video negotiation error: '+err.message); } }
     lastId = Math.max(lastId, result.last_id);
   } catch(err) { status('Connection to server interrupted: '+err.message); }
 }
 function startPolling() { poll(); polling=setInterval(poll,1100); }
-$('start').onclick = async () => {
+$('start').onclick = () => { if (filmingOk) goLive(); else { $('filmingError').textContent = ''; $('filmingDialog').showModal(); } };
+async function goLive() {
   try {
     camera = await openCamera();
     outStream = setupZoom(camera);
@@ -100,7 +107,7 @@ $('start').onclick = async () => {
     requestWakeLock();
     status('You are live. Viewers can sign in and tap Watch live.');
   } catch(err) { status('Camera error: '+err.message); }
-};
+}
 video.addEventListener('click', () => { if (video.paused) video.play().catch(() => status('Tap Watch live again to resume playback.')); });
 $('connect').onclick = async () => { wantWatch = true; reconnectTries = 0; try { status('Requesting live video…'); requestWakeLock(); await send('join'); scheduleReconnect(8000); } catch(err) { status(err.message); } };
 $('stop').onclick = async () => { await shutDown(); $('start').hidden=false; $('stop').hidden=true; status('Stream stopped'); };
@@ -133,7 +140,7 @@ function stopRecorder() {
 }
 function fileStamp() { return new Date().toISOString().replace(/[:.]/g,'-'); }
 const ICON = name => `<svg class="icon"><use href="#i-${name}"/></svg>`;
-function makeCard({ src, photo, title, sub, href, filename }) {
+function makeCard({ src, photo, title, sub, href, filename, onDelete }) {
   const card = document.createElement('article'); card.className = 'capture-card';
   const preview = document.createElement('div'); preview.className = 'capture-preview';
   const media = document.createElement(photo ? 'img' : 'video');
@@ -149,7 +156,15 @@ function makeCard({ src, photo, title, sub, href, filename }) {
   const link = document.createElement('a'); link.href = href; link.setAttribute('aria-label', `Download ${title}`); link.title = 'Download';
   if (filename) link.download = filename; else { link.target = '_blank'; link.rel = 'noopener'; }
   link.innerHTML = ICON('download');
-  meta.append(text, link); card.append(preview, meta);
+  const actions = document.createElement('div'); actions.className = 'card-actions';
+  actions.append(link);
+  if (onDelete) {
+    const del = document.createElement('button'); del.type = 'button'; del.title = 'Delete'; del.setAttribute('aria-label', `Delete ${title}`);
+    del.innerHTML = ICON('trash');
+    del.onclick = () => onDelete(card, del);
+    actions.append(del);
+  }
+  meta.append(text, actions); card.append(preview, meta);
   return card;
 }
 function addCapture(blob, kind, filename) {
@@ -211,7 +226,11 @@ $('save').onclick = () => {
   const name=`courtline-highlight-${fileStamp()}-${++clipNumber}.${ext}`;
   addCapture(blob, '30s highlight (experimental)', name);
 };
-(async function init(){ try {const me=await api('/me'); if(me.role){role=me.role;showApp();}} catch(err){console.error(err);} })();
+(async function init() {
+  const authError = new URLSearchParams(location.search).get('auth_error');
+  if (authError) { $('loginError').textContent = authError; history.replaceState(null, '', '/'); }
+  try { await afterSignIn(); } catch (err) { console.error(err); }
+})();
 
 async function uploadToCloud(blob, kind) {
   const mime = blob.type.split(';')[0] || (kind === 'Photo' ? 'image/jpeg' : 'video/mp4');
@@ -236,7 +255,8 @@ async function loadCloud() {
     for (const item of items) {
       const photo = /\.(jpg|png)$/i.test(item.key);
       const when = new Date(item.date).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-      gallery.appendChild(makeCard({ src: item.url, photo, title: photo ? 'Photo' : 'Video', sub: `${when} · ${formatSize(item.size)}`, href: item.url }));
+      gallery.appendChild(makeCard({ src: item.url, photo, title: photo ? 'Photo' : 'Video', sub: `${when} · ${formatSize(item.size)}`, href: item.url,
+        onDelete: role === 'broadcaster' ? (card, btn) => deleteCloudItem(item.key, card, btn) : null }));
     }
   } catch (err) {
     gallery.replaceChildren();
@@ -454,3 +474,115 @@ document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', (
     $(t.dataset.tab).hidden = !on;
   });
 }));
+
+
+// ---------- Sign-in, age confirmation, filming permission ----------
+async function afterSignIn() {
+  me = await api('/me');
+  $('googleBtn').hidden = !me.google; $('orDivider').hidden = !me.google;
+  if (!me.role) return;
+  role = me.role; filmingOk = !!me.filming_ok;
+  $('loginPanel').hidden = true;
+  if (me.consent) showApp(); else showConsent();
+}
+function showConsent() {
+  if (appStarted) { location.reload(); return; } // terms changed mid-session: start clean
+  $('loginPanel').hidden = true; $('appPanel').hidden = true; $('consentPanel').hidden = false;
+}
+$('consentForm').addEventListener('change', () => {
+  const age = ($('consentForm').querySelector('input[name=age]:checked') || {}).value;
+  $('guardianRow').hidden = age !== 'teen';
+});
+$('consentForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const age = ($('consentForm').querySelector('input[name=age]:checked') || {}).value;
+  $('consentError').textContent = '';
+  try {
+    await api('/api/consent', { method: 'POST', body: JSON.stringify({ age, terms: $('termsCheck').checked, guardian: $('guardianCheck').checked }) });
+    me.consent = true; showApp();
+  } catch (err) {
+    $('consentError').textContent = err.message;
+    if (age === 'child') setTimeout(() => location.reload(), 6000);
+  }
+});
+$('consentSignOut').onclick = async () => { await api('/logout', { method: 'POST', body: '{}' }).catch(() => {}); location.reload(); };
+
+$('filmingCancel').onclick = () => $('filmingDialog').close();
+$('filmingForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!$('filmingCheck').checked || !$('eventCheck').checked) { $('filmingError').textContent = 'Please confirm both to go live.'; return; }
+  try {
+    await api('/api/filming-consent', { method: 'POST', body: JSON.stringify({ confirmed: true }) });
+    filmingOk = true; $('filmingDialog').close(); goLive();
+  } catch (err) { $('filmingError').textContent = err.message; }
+});
+
+async function deleteCloudItem(key, card, btn) {
+  if (btn.dataset.armed !== '1') { // tap twice to delete, no browser pop-ups
+    btn.dataset.armed = '1'; btn.title = 'Tap again to delete'; btn.style.color = 'var(--danger)';
+    status('Tap the delete button again to permanently delete this file.');
+    setTimeout(() => { btn.dataset.armed = ''; btn.style.color = ''; btn.title = 'Delete'; }, 4000);
+    return;
+  }
+  try { await api('/api/recordings/delete', { method: 'POST', body: JSON.stringify({ key }) }); card.remove(); status('Deleted from the cloud.'); }
+  catch (err) { status(`Could not delete: ${err.message}`); }
+}
+
+// ---------- Live chat ----------
+function setupChatIdentity() {
+  const needName = !me.name;
+  $('chatName').hidden = !needName;
+  if (needName) { try { $('chatName').value = localStorage.getItem('courtline-chat-name') || ''; } catch {} }
+  $('chatWho').textContent = me.name ? `as ${me.name}` : '';
+}
+function chatTime(iso) { return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+function renderChat(messages) {
+  if (!messages || !messages.length) return;
+  const list = $('chatList');
+  const nearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
+  const empty = list.querySelector('.chat-empty'); if (empty) empty.remove();
+  for (const m of messages) {
+    chatLast = Math.max(chatLast, m.id);
+    const row = document.createElement('div'); row.className = 'chat-msg';
+    const name = document.createElement('b'); name.textContent = m.name; if (m.role === 'broadcaster') name.className = 'host';
+    const text = document.createElement('span'); text.textContent = m.text;
+    const time = document.createElement('time'); time.textContent = chatTime(m.at);
+    row.append(name, text, time); list.append(row);
+    showBubble(m);
+  }
+  while (list.children.length > 300) list.firstChild.remove();
+  if (nearBottom) list.scrollTop = list.scrollHeight;
+  const full = $('viewerBox').classList.contains('is-full') || !!fsElement(); // overlay already shows messages
+  const rect = $('chatPanel').getBoundingClientRect();
+  if (!full && (rect.top > innerHeight || rect.bottom < 0)) $('chatUnread').hidden = false;
+}
+function showBubble(m) {
+  const box = $('chatOverlay');
+  const bubble = document.createElement('div'); bubble.className = 'bubble';
+  const name = document.createElement('b'); name.textContent = m.name;
+  bubble.append(name, document.createTextNode(m.text));
+  box.append(bubble);
+  while (box.children.length > 4) box.firstChild.remove();
+  setTimeout(() => bubble.classList.add('fade'), 7000);
+  setTimeout(() => bubble.remove(), 7700);
+}
+async function sendChat(text, input) {
+  text = text.trim(); if (!text) return;
+  const name = $('chatName').value.trim();
+  if (!me.name && !name) { $('chatError').textContent = 'Add your name first.'; $('chatName').focus(); return; }
+  $('chatError').textContent = '';
+  try {
+    const msg = await api('/api/chat', { method: 'POST', body: JSON.stringify({ text, name }) });
+    if (!me.name) { try { localStorage.setItem('courtline-chat-name', name); } catch {} me.name = msg.name; setupChatIdentity(); }
+    input.value = '';
+    if (msg.id > chatLast) renderChat([msg]);
+  } catch (err) { $('chatError').textContent = err.message; }
+}
+$('chatForm').addEventListener('submit', e => { e.preventDefault(); sendChat($('chatInput').value, $('chatInput')); });
+$('overlayChatForm').addEventListener('submit', e => { e.preventDefault(); sendChat($('overlayChatInput').value, $('overlayChatInput')); });
+$('chatBtn').onclick = () => {
+  $('chatUnread').hidden = true;
+  const full = $('viewerBox').classList.contains('is-full') || !!fsElement();
+  if (full) { const open = $('viewerBox').classList.toggle('chat-open'); if (open) $('overlayChatInput').focus(); }
+  else { $('chatPanel').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('chatInput').focus({ preventScroll: true }); }
+};

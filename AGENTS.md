@@ -1,7 +1,7 @@
 # AGENTS.md — Courtline (tennis-live)
 
 Context for AI coding agents (Claude Code, Codex, Cursor, etc.) and new developers.
-Read this first. Step-by-step procedures live in [SKILLS.md](SKILLS.md).
+Read this first. Step-by-step procedures live in [SKILLS.md](SKILLS.md); current state, what's configured and what's next live in [docs/STATUS.md](docs/STATUS.md). Update STATUS.md at the end of each session.
 
 ## What this is
 
@@ -36,8 +36,12 @@ prototype shortcuts.
 - `render.yaml` — Render blueprint, lists every required env var.
 - `r2-cors.json` — CORS policy to paste into the R2 bucket.
 - `R2-SETUP.md` — first-time Cloudflare R2 setup.
+- `public/terms.html`, `privacy.html`, `safety.html` — **draft** legal pages (placeholders in [brackets]).
+- `docs/LEGAL.md` — legal and minors requirements checklist. Read it before touching auth, chat, recording or data retention.
 
 ## How it works
+
+0. **Auth & consent.** Google sign-in (`/auth/google`, hand-rolled OAuth code flow with PKCE, no gems) maps the verified email to a role through the env allowlists; court passwords still work. First sign-in must pass `POST /api/consent` (age group + Terms, under-13 refused). `authenticated!` blocks every API until consent matches `LEGAL_VERSION`. Streamers also confirm filming permission (`/api/filming-consent`) before the server accepts their WebRTC offer. See `docs/LEGAL.md`.
 
 1. **Login.** `POST /login` compares the password with `BROADCAST_PASSWORD` or `VIEWER_PASSWORD` and stores `role` (`broadcaster` | `viewer`) in a signed cookie session.
 2. **Signaling.** Clients poll `GET /events?after=N` about once a second. `POST /signal` puts `join|offer|answer|candidate|leave` messages into an in-memory queue addressed to the other role. `epoch` resets clients when the server restarts.
@@ -45,6 +49,7 @@ prototype shortcuts.
 4. **Zoom.** If the camera supports `track.getCapabilities().zoom`, the app uses hardware zoom (`applyConstraints`). Otherwise it draws a cropped image to a canvas and sends `canvas.captureStream(30)`. Viewers, snapshots and recordings all see the zoomed picture.
 5. **Capture.** Snapshot = canvas JPEG of the `<video>`. Record = `MediaRecorder` start→stop. "Last 30s" = rolling 1-second chunks (experimental, often unplayable on iOS).
 6. **Cloud save.** `POST /api/uploads` → server returns a 10-minute presigned PUT URL → the browser PUTs the blob straight to R2. `GET /api/recordings` lists the latest 100 objects under `recordings/` with 15-minute presigned GET URLs.
+7. **Chat.** `POST /api/chat`; new messages ride along on the `/events` poll (`chat_after`). Group-only by design (SafeSport), with no DMs. Stored in memory (last 300), so they're lost on restart until there's a database.
 
 ## Environment variables
 
@@ -56,6 +61,8 @@ prototype shortcuts.
 | `R2_BUCKET` | Bucket name, e.g. `courtline-recordings` |
 | `R2_ENDPOINT` | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`: **account ID only, no bucket path** |
 | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | R2 API token (Object Read & Write, scoped to the bucket) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in (OAuth web client). Optional; the Google button only shows when both are set |
+| `BROADCASTER_EMAILS` / `VIEWER_EMAILS` | Comma-separated Google emails allowed to stream / watch |
 | `CF_TURN_KEY_ID` / `CF_TURN_KEY_API_TOKEN` | Cloudflare Realtime TURN key. Optional, but needed for reliable video on cellular |
 
 Never commit real values. `.env` is gitignored.
@@ -101,6 +108,8 @@ Rough order of work to turn the prototype into a product:
 7. **Trust & compliance.** Minors on camera → privacy policy, consent, data deletion, COPPA/GDPR review, audit logs.
 
 ## Instructions for agents
+
+- Never add private/direct messaging, public streams, face recognition, or anything that loosens the age/consent gates without updating `docs/LEGAL.md` and flagging it to the owner.
 
 - Read `SKILLS.md` for deploy, debugging and feature recipes before improvising.
 - Don't put secrets, account IDs or passwords in code, docs, logs or commits.

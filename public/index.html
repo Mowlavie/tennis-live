@@ -28,6 +28,9 @@
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4.5v5h-5"/></symbol>
     <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 12.5a7.5 7.5 0 0 1-11.2 6.5L4 20l1.2-4.3A7.5 7.5 0 1 1 20 12.5z"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M4.5 12 20 4.5 13.5 20l-2.3-6.2z"/><path d="m11.2 13.8 3.3-3.3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V4.5h4V7M7 7l1 12.5h8L17 7"/></symbol>
     <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M6 12h12M12 6v12"/></symbol>
   </defs>
@@ -48,15 +51,39 @@
     <div class="login-card">
       <svg class="login-logo"><use href="#i-logo"/></svg>
       <h1>Sign in to Courtline</h1>
-      <p class="muted">Enter the password for your court to stream or watch.</p>
+      <p class="muted">Stream or watch your private court.</p>
+      <a id="googleBtn" class="btn btn-google btn-block" href="/auth/google" hidden>
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.4h6.5a5.6 5.6 0 0 1-2.4 3.6v3h3.9c2.3-2.1 3.5-5.2 3.5-8.7z"/><path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-2.9l-3.9-3c-1.1.7-2.5 1.2-4.1 1.2-3.1 0-5.8-2.1-6.7-5H1.3v3.1A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.3 14.3a7.2 7.2 0 0 1 0-4.6V6.6h-4a12 12 0 0 0 0 10.8z"/><path fill="#EA4335" d="M12 4.8c1.8 0 3.3.6 4.6 1.8l3.4-3.4A12 12 0 0 0 1.3 6.6l4 3.1c.9-2.8 3.6-4.9 6.7-4.9z"/></svg>
+        Continue with Google
+      </a>
+      <div id="orDivider" class="divider" hidden><span>or use a court password</span></div>
       <form id="loginForm" class="login-form">
         <label for="password">Password</label>
         <input id="password" type="password" autocomplete="current-password" required>
         <button class="btn btn-primary btn-block" type="submit">Sign in</button>
         <p id="loginError" class="form-error" role="alert" aria-live="polite"></p>
       </form>
+      <p class="legal-line">By continuing you agree to the <a href="/terms.html">Terms</a> and <a href="/privacy.html">Privacy Policy</a>.</p>
     </div>
-    <p class="login-foot">Streams are private. Only people with a password can watch.</p>
+    <p class="login-foot">Streams are private. Only invited people can watch.</p>
+  </section>
+
+  <section id="consentPanel" class="login" hidden>
+    <form id="consentForm" class="login-card consent-card">
+      <h1>Before you continue</h1>
+      <p class="muted">Courtline is often used to film young players. We need to confirm your age once.</p>
+      <fieldset class="choice-group">
+        <legend>How old are you?</legend>
+        <label class="choice"><input type="radio" name="age" value="adult" required><span>18 or older</span></label>
+        <label class="choice"><input type="radio" name="age" value="teen"><span>13 to 17</span></label>
+        <label class="choice"><input type="radio" name="age" value="child"><span>12 or younger</span></label>
+      </fieldset>
+      <label class="check" id="guardianRow" hidden><input type="checkbox" id="guardianCheck"><span>My parent or guardian knows I use Courtline and has given permission.</span></label>
+      <label class="check"><input type="checkbox" id="termsCheck" required><span>I agree to the <a href="/terms.html" target="_blank">Terms</a> and <a href="/privacy.html" target="_blank">Privacy Policy</a>.</span></label>
+      <button class="btn btn-primary btn-block" type="submit">Continue</button>
+      <p id="consentError" class="form-error" role="alert" aria-live="polite"></p>
+      <button class="btn btn-ghost btn-sm consent-signout" type="button" id="consentSignOut">Sign out</button>
+    </form>
   </section>
 
   <section id="appPanel" class="app" hidden>
@@ -69,9 +96,15 @@
           <span id="recBadge" class="badge badge-rec" hidden><i></i><span id="recTime">00:00</span></span>
         </div>
         <div class="video-tools">
+          <button id="chatBtn" class="tool-btn" type="button" aria-label="Chat" title="Chat"><svg class="icon"><use href="#i-chat"/></svg><span id="chatUnread" class="dot" hidden></span></button>
           <button id="pipBtn" class="tool-btn" type="button" aria-label="Picture in picture" title="Picture in picture" hidden><svg class="icon"><use href="#i-pip"/></svg></button>
           <button id="fullBtn" class="tool-btn" type="button" aria-label="Full screen" title="Full screen"><svg class="icon icon-expand"><use href="#i-expand"/></svg><svg class="icon icon-collapse"><use href="#i-collapse"/></svg></button>
         </div>
+        <div id="chatOverlay" class="chat-overlay" aria-hidden="true"></div>
+        <form id="overlayChatForm" class="overlay-chat-form" autocomplete="off">
+          <input id="overlayChatInput" maxlength="500" placeholder="Message" aria-label="Chat message">
+          <button type="submit" aria-label="Send"><svg class="icon"><use href="#i-send"/></svg></button>
+        </form>
         <div id="zoomBox" class="zoom-box" hidden>
           <button id="zoomOut" type="button" aria-label="Zoom out"><svg class="icon"><use href="#i-minus"/></svg></button>
           <input id="zoomRange" type="range" min="1" max="4" step="0.1" value="1" aria-label="Zoom">
@@ -98,6 +131,18 @@
     </div>
 
     <aside class="side-col">
+      <section class="panel chat-panel" id="chatPanel">
+        <div class="panel-head"><h2>Chat</h2><span class="muted small" id="chatWho"></span></div>
+        <div id="chatList" class="chat-list" role="log" aria-live="polite"><div class="chat-empty">No messages yet. Say hi.</div></div>
+        <form id="chatForm" class="chat-form" autocomplete="off">
+          <input id="chatName" maxlength="30" placeholder="Your name" aria-label="Your name" hidden>
+          <div class="chat-input-row">
+            <input id="chatInput" maxlength="500" placeholder="Send a message" aria-label="Chat message">
+            <button class="icon-btn icon-btn-primary" type="submit" aria-label="Send"><svg class="icon"><use href="#i-send"/></svg></button>
+          </div>
+          <p id="chatError" class="form-error small" role="alert"></p>
+        </form>
+      </section>
       <section class="panel">
         <div class="panel-head">
           <h2>Library</h2>
@@ -120,7 +165,21 @@
       </section>
     </aside>
   </section>
+  <dialog id="filmingDialog" class="dialog">
+    <form method="dialog" id="filmingForm">
+      <h2>Before you go live</h2>
+      <p class="muted">Please confirm the following. You only need to do this once per sign-in.</p>
+      <label class="check"><input type="checkbox" id="filmingCheck" required><span>I have permission to film everyone who will appear on camera, including permission from a parent or guardian for any player under 18.</span></label>
+      <label class="check"><input type="checkbox" id="eventCheck" required><span>I'll follow the filming rules of the club, school or tournament where I'm streaming.</span></label>
+      <p id="filmingError" class="form-error small" role="alert"></p>
+      <div class="dialog-actions">
+        <button class="btn btn-ghost" value="cancel" type="button" id="filmingCancel">Cancel</button>
+        <button class="btn btn-primary" type="submit" id="filmingConfirm">Confirm and go live</button>
+      </div>
+    </form>
+  </dialog>
 </main>
+<footer class="site-foot"><span>© 2026 Courtline</span><a href="/terms.html">Terms</a><a href="/privacy.html">Privacy</a><a href="/safety.html">Safety & minors</a></footer>
 <script src="/recording.js" defer></script>
 <script src="/app.js" defer></script>
 </body>
